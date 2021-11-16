@@ -6,8 +6,8 @@ This project seeks to take in IOCs from various threat intel feeds, normalize th
 - `ioc_normalization.py -p /directory/containing/csvs -o /output/directory`
 
 ## Notes
-- because Alienvault IOCs usually don't have very good descriptions, you must name the files with the relevant context and date in this format: "[context]_YYYY-MM-DD"
-    - example: qakbot_2021-01-01
+- because Alienvault IOCs usually don't have very good descriptions, you must name the files with the relevant context and date in this format: "[context]_YYYY-MM-DD.csv"
+    - example: qakbot_2021-01-01.csv
 
 ## Future Works
 - [Done] use a common date format for published and updated columns
