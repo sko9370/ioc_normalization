@@ -26,6 +26,7 @@ df.drop(['reports', 'kill_chains', 'malicious_confidence'], axis=1, inplace=True
 df.rename(columns = {'published_date':'Published', 'last_updated':'Updated', 'labels': 'Context'}, inplace=True)
 df.columns.names = ['Indicator']
 df.index.name = 'Indicator' 
+# label columns contains all other context information
 #df['Context'] = df['malware_families'] + ' ' + df['actors'] + ' ' + df['labels']
 df.drop(['malware_families', 'actors'], axis=1, inplace=True)
 
