@@ -10,6 +10,7 @@ from datetime import date
 parser = argparse.ArgumentParser()
 parser.add_argument('-p', '--path', type=str, help='Specify target path of IOC CSVs')
 parser.add_argument('-o', '--out_path', type=str, help='Specify output file path')
+parser.add_argument('-w', '--wildcard', action='store_true', help='Turn on wildcard column for dns for more flexible matching')
 args, commands = parser.parse_known_args()
 
 if not args.path:
@@ -192,11 +193,15 @@ else:
 # have to check if list of dfs is empty because .concat will throw error
 # deduplicate
 # write out to csv
+# check for args.wildcard commandline argument and add wildcard column if enabled
 if dns_dfs:
     dns_df = pd.concat(dns_dfs)
     dns_df.drop(['Type'], axis=1, inplace=True)
     #print(dns_df)
     dns_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    if args.wildcard:
+        dns_df['Wildcard'] = dns_df['Indicator'].apply(lambda x: '*' + x + '*') 
+        dns_df = dns_df[['Indicator', 'Wildcard', 'Published', 'Updated', 'Context']]
     dns_df.to_csv(os.path.join(out_path, 'dns_all.csv'), index = False)
 if ip_dfs:
     ip_df = pd.concat(ip_dfs)
