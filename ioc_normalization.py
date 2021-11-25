@@ -1,11 +1,13 @@
 import argparse
 import os, sys
 import csv
-import re
 import pandas as pd
 from datetime import datetime
 from datetime import date
 from urllib.parse import urlparse
+
+import utils
+import alienvault
 
 # parses command line for path argument
 parser = argparse.ArgumentParser()
@@ -19,16 +21,7 @@ if not args.path:
     sys.exit(1)
 
 # get file paths for all csvs in target path by searching recursively for *.csv
-topdir = args.path
-extensions = ['.csv', '.xlsx']
-file_paths = []
-
-for dirpath, dirnames, files in os.walk(topdir):
-    for name in files:
-        if name.lower().endswith(extensions[0]):
-            file_paths.append(os.path.join(dirpath, name))
-        elif name.lower().endswith(extensions[1]):
-            file_paths.append(os.path.join(dirpath, name))
+file_paths = utils.get_file_paths(args.path)
 
 # take in different sources based on header (line 1 of csv)
 # then organize based on indicator type
@@ -52,38 +45,28 @@ for file_path in file_paths:
             header = ''
         full_filename = os.path.basename(file_path)
         # check for AlienVault header
-        if header == "\"Indicator type\",\"Indicator\",\"Description\"":
-            temp_df = pd.read_csv(in_file, header=0, dtype='unicode')
-            # parse filename for context and date since most alienvault entries
-            # do not have that information
-            words = full_filename.split('_')
-            if len(words) == 2:
-                source, end = full_filename.split('_')
-            elif len(words) == 3:
-                attribution, source, end = full_filename.split('_')
-            date_field, extension = os.path.splitext(end)
-            temp_df['Published'] = date_field
-            temp_df['Updated'] = date_field
+        if alienvault.header() in header:
+            temp_df = utils.read_csv(in_file)
+            attribution, source, date_field = alienvault.parse_filename(full_filename)
+            alienvault.add_dates(temp_df, date_field)
             # need to replace NaN's (NONE in pandas) with empty strings to concatenate
-            temp_df.fillna('', inplace=True)
+            utils.fill_empty(temp_df)
             # add source as column
-            temp_df.loc[temp_df['Description'] == '', 'Source'] = source
-            temp_df.loc[temp_df['Description'] != '', 'Source'] = source
+            alienvault.add_source(temp_df, source)
             # add attribution as column
-            temp_df.loc[temp_df['Description'] == '', 'Attribution'] = attribution 
-            temp_df.loc[temp_df['Description'] != '', 'Attribution'] = attribution + ': ' + temp_df['Description']
+            alienvault.add_attribution(temp_df, attribution)
             # drop Description column now because redundant with Context
-            temp_df.drop(['Description'], axis=1, inplace=True)
+            alienvault.drop_cols(temp_df)
             # normalize column names
-            temp_df.rename(columns = {'Indicator type':'Type'}, inplace=True)
+            alienvault.rename_cols(temp_df)
             # reorder column names
-            temp_df = temp_df[['Indicator', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
-            # add dns IOCs
-            dns_dfs.append(temp_df[temp_df['Type'] == 'domain'])
-            dns_dfs.append(temp_df[temp_df['Type'] == 'hostname'])
-            ip_dfs.append(temp_df[temp_df['Type'] == 'IPv4'])
-            url_dfs.append(temp_df[temp_df['Type'] == 'URL'])
-            md5_dfs.append(temp_df[temp_df['Type'] == 'FileHash-MD5'])
+            temp_df = alienvault.reorder_cols(temp_df)
+            # distribute IOCs to respective dataframes by type
+            dns_dfs.append(alienvault.get_domains(temp_df))
+            dns_dfs.append(alienvault.get_hostnames(temp_df))
+            ip_dfs.append(alienvault.get_ips(temp_df))
+            url_dfs.append(alienvault.get_urls(temp_df))
+            md5_dfs.append(alienvault.get_md5s(temp_df))
             #ja3_dfs.append(temp_df[temp_df['Type'] == 'JA3'])
         # check for CrowdStrike header
         elif header == "indicator,type,malware_families,actors,reports,kill_chains,published_date,last_updated,malicious_confidence,labels":
