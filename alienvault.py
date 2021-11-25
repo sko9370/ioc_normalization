@@ -45,3 +45,21 @@ def get_urls(temp_df):
 
 def get_md5s(temp_df):
     return temp_df[temp_df['Type'] == 'FileHash-MD5']
+
+def preprocess(in_file, full_filename):
+    temp_df = utils.read_csv(in_file)
+    attribution, source, date_field = parse_filename(full_filename)
+    add_dates(temp_df, date_field)
+    # need to replace NaN's (NONE in pandas) with empty strings to concatenate
+    utils.fill_empty(temp_df)
+    # add source as column
+    add_source(temp_df, source)
+    # add attribution as column
+    add_attribution(temp_df, attribution)
+    # drop Description column now because redundant with Context
+    drop_cols(temp_df)
+    # normalize column names
+    rename_cols(temp_df)
+    # reorder column names
+    temp_df = reorder_cols(temp_df)
+    return temp_df

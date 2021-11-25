@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import utils
 import alienvault
+import crowdstrike
 
 # parses command line for path argument
 parser = argparse.ArgumentParser()
@@ -46,21 +47,7 @@ for file_path in file_paths:
         full_filename = os.path.basename(file_path)
         # check for AlienVault header
         if alienvault.header() in header:
-            temp_df = utils.read_csv(in_file)
-            attribution, source, date_field = alienvault.parse_filename(full_filename)
-            alienvault.add_dates(temp_df, date_field)
-            # need to replace NaN's (NONE in pandas) with empty strings to concatenate
-            utils.fill_empty(temp_df)
-            # add source as column
-            alienvault.add_source(temp_df, source)
-            # add attribution as column
-            alienvault.add_attribution(temp_df, attribution)
-            # drop Description column now because redundant with Context
-            alienvault.drop_cols(temp_df)
-            # normalize column names
-            alienvault.rename_cols(temp_df)
-            # reorder column names
-            temp_df = alienvault.reorder_cols(temp_df)
+            temp_df = alienvault.preprocess(in_file, full_filename)
             # distribute IOCs to respective dataframes by type
             dns_dfs.append(alienvault.get_domains(temp_df))
             dns_dfs.append(alienvault.get_hostnames(temp_df))
@@ -69,29 +56,12 @@ for file_path in file_paths:
             md5_dfs.append(alienvault.get_md5s(temp_df))
             #ja3_dfs.append(temp_df[temp_df['Type'] == 'JA3'])
         # check for CrowdStrike header
-        elif header == "indicator,type,malware_families,actors,reports,kill_chains,published_date,last_updated,malicious_confidence,labels":
-            temp_df = pd.read_csv(in_file, header=0, dtype='unicode')
-            # need to replace NaN's (NONE in pandas) with empty strings to concatenate
-            temp_df.fillna('', inplace=True)
-            # add Source and Attribution columns
-            temp_df['Source'] = 'Crowdstrike'
-            temp_df.loc[(temp_df['malware_families'] != '') & (temp_df['actors'] != ''), 'Attribution'] = 'Actors(s): ' + temp_df['actors'] + '; Malware: ' + temp_df['malware_families']
-            temp_df.loc[temp_df['malware_families'] == '', 'Attribution'] = 'Actors(s): ' + temp_df['actors']
-            temp_df.loc[temp_df['actors'] == '', 'Attribution'] = 'Malware: ' + temp_df['malware_families']
-            # normalize column names
-            temp_df.rename(columns = {'indicator':'Indicator', 'type':'Type', 'published_date':'Published', 'last_updated':'Updated'}, inplace=True)
-            # drop unnecessary columns
-            unnecessary_columns = ['reports','kill_chains','malicious_confidence', 'labels', 'actors', 'malware_families']
-            temp_df.drop(unnecessary_columns, axis=1, inplace=True)
-            # format datetime into just date YYYY-MM-DD
-            temp_df['Published'] = temp_df['Published'].apply(lambda x: x[:10])
-            temp_df['Updated'] = temp_df['Updated'].apply(lambda x: x[:10])
-            # reorder column names
-            temp_df = temp_df[['Indicator', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
-            dns_dfs.append(temp_df[temp_df['Type'] == 'domain'])
-            ip_dfs.append(temp_df[temp_df['Type'] == 'ip_address'])
-            url_dfs.append(temp_df[temp_df['Type'] == 'url'])
-            md5_dfs.append(temp_df[temp_df['Type'] == 'hash_md5'])
+        elif crowdstrike.header() in header:
+            temp_df = crowdstrike.preprocess(in_file)
+            dns_dfs.append(crowdstrike.get_domains(temp_df))
+            ip_dfs.append(crowdstrike.get_ips(temp_df))
+            url_dfs.append(crowdstrike.get_urls(temp_df))
+            md5_dfs.append(crowdstrike.get_md5s(temp_df))
             # ja3??
         # check for FireEye header
         # files have an odd character in line so can't do an exact match
