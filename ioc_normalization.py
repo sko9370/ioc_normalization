@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import utils
 import alienvault
 import crowdstrike
+import mandiant
 
 # parses command line for path argument
 parser = argparse.ArgumentParser()
@@ -65,23 +66,14 @@ for file_path in file_paths:
             # ja3??
         # check for FireEye header
         # files have an odd character in line so can't do an exact match
-        elif "\"Indicator Value\",\"Indicator Type\",\"Associations\",\"Exclusive\",\"First Seen\",\"Last Seen\"" in header:
-            temp_df = pd.read_csv(in_file, header=0, dtype='unicode')
-            temp_df.drop(['Exclusive'], axis=1, inplace=True)
-            # rename columns
-            temp_df.columns = ['Indicator', 'Type', 'Attribution', 'Published', 'Updated']
-            # add Source column
-            temp_df['Source'] = 'Mandiant FireEye'
-            # reorder column names
-            temp_df = temp_df[['Indicator', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
-            temp_df['Published'] = temp_df['Published'].apply(lambda x: datetime.strptime(x, '%B %d, %Y').strftime('%Y-%m-%d'))
-            temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%B %d, %Y').strftime('%Y-%m-%d'))
-            dns_dfs.append(temp_df[temp_df['Type'] == 'FQDN'])
-            ip_dfs.append(temp_df[temp_df['Type'] == 'IPV4'])
-            url_dfs.append(temp_df[temp_df['Type'] == 'URL'])
-            md5_dfs.append(temp_df[temp_df['Type'] == 'MD5'])
-            sha1_dfs.append(temp_df[temp_df['Type'] == 'SHA1'])
-            sha256_dfs.append(temp_df[temp_df['Type'] == 'SHA256'])
+        elif mandiant.header() in header:
+            temp_df = mandiant.preprocess(in_file)
+            dns_dfs.append(mandiant.get_domains(temp_df))
+            ip_dfs.append(mandiant.get_ips(temp_df))
+            url_dfs.append(mandiant.get_urls(temp_df))
+            md5_dfs.append(mandiant.get_md5s(temp_df))
+            sha1_dfs.append(mandiant.get_sha1s(temp_df))
+            sha256_dfs.append(mandiant.get_sha256s(temp_df))
             # ja3??
         elif ".xlsx" in full_filename:
             temp_df = pd.read_excel(file_path)
