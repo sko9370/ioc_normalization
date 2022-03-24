@@ -78,7 +78,7 @@ for file_path in file_paths:
         elif ".xlsx" in full_filename:
             temp_df = pd.read_excel(file_path)
             # type 2
-            if 'uuid' in temp_df.columns:
+            if 'event_id' in temp_df.columns:
                 # create Published and Updated columns from modified date
                 temp_df['Published'] = temp_df['date'].apply(lambda x: date.fromtimestamp(x).isoformat())
                 temp_df['Updated'] = temp_df['date'].apply(lambda x: date.fromtimestamp(x).isoformat())
@@ -100,7 +100,7 @@ for file_path in file_paths:
                 # reorder column names
                 temp_df = temp_df[['Indicator', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
                 dns_dfs.append(temp_df[temp_df['Type'] == 'domain'])
-                # strip port number from ip address 
+                # strip port number from ip address
                 temp_df['Indicator'] = temp_df['Indicator'].apply(lambda x: x if '|' not in x else x.split('|')[0])
                 ip_dfs.append(temp_df[temp_df['Type'] == 'ip-dst|port'])
                 ip_dfs.append(temp_df[temp_df['Type'] == 'ip-dst'])
@@ -172,7 +172,7 @@ def validate_ip(address):
     try:
         for octet in str(address).split('.'):
             if int(octet) < 0 or int(octet) > 255:
-                return False 
+                return False
         return True
     except:
         return False
@@ -192,7 +192,7 @@ if url_dfs:
     url_df['IP'] = url_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
     url_df.fillna('', inplace=True)
     url_df['IP'] = url_df['IP'].apply(lambda x: x if validate_ip(x) else '')
-    temp_df = url_df[['IP', 'Type', 'Published', 'Updated', 'Attribution', 'Source']] 
+    temp_df = url_df[['IP', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
     temp_df = temp_df[temp_df['IP'].astype(bool)].copy()
     temp_df.rename(columns = {'IP':'Indicator'}, inplace=True)
     temp_df = temp_df[['Indicator', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
@@ -214,7 +214,7 @@ if dns_dfs:
     #print(dns_df)
     dns_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
     if args.wildcard:
-        dns_df['Wildcard'] = dns_df['Indicator'].apply(lambda x: '*' + x + '*') 
+        dns_df['Wildcard'] = dns_df['Indicator'].apply(lambda x: '*' + x + '*')
         dns_df = dns_df[['Indicator', 'Wildcard', 'Published', 'Updated', 'Context']]
     dns_df.to_csv(os.path.join(out_path, 'dns_all.csv'), index = False)
 if ip_dfs:
@@ -237,7 +237,7 @@ if md5_dfs:
             for row in rows:
                 comment = ', '.join(filter(None, ['Attribution: ' + row['Attribution'], 'Source: ' + row['Source']]))
                 file.write(row['Indicator'] + '; ' + comment + 'Downloaded: ' + row['Published'] + '\n')
-    
+
     # can't figure out why some extra lines starting with the previous line's description, had to manually filter them out
     with open(os.path.join(out_path, 'pre_loki.txt'), 'r') as in_file:
         rows = in_file.readlines()[1:]
