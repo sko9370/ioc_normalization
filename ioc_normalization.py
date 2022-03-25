@@ -160,6 +160,38 @@ for file_path in file_paths:
                     step_df = temp_df[['Email Addresses', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
                     step_df.rename(columns = {'Email Addresses':'Indicator'}, inplace=True)
                     email_dfs.append(step_df)
+        elif ".csv" in full_filename:
+            temp_df = pd.read_csv(file_path, encoding='cp1252')
+            # type 2
+            if 'event_id' in temp_df.columns:
+                # create Published and Updated columns from modified date
+                temp_df['Published'] = temp_df['event_date'].apply(lambda x: datetime.strptime(x, "%m/%d/%Y").isoformat())
+                temp_df['Updated'] = temp_df['event_date'].apply(lambda x: datetime.strptime(x, "%m/%d/%Y").isoformat())
+                temp_df['comment'] = ''
+                # need to replace NaN's (NONE in pandas) with empty strings to concatenate
+                temp_df.fillna('', inplace=True)
+                # create Attribution column from the filename, event_id, comment, and attribute_tag
+                filename, ext = os.path.splitext(full_filename)
+                # create Source column
+                temp_df['Source'] = 'icoast'
+                # drop unnecessary columns
+                unnecessary_columns = ['event_id', 'attribute_tag', 'category', 'event_date']
+                temp_df.drop(unnecessary_columns, axis=1, inplace=True)
+                # normalize column names
+                temp_df.rename(columns = {'type':'Type', 'value':'Indicator'}, inplace=True)
+                # rename columns
+                temp_df.columns = ['Type', 'Indicator', 'Published', 'Updated', 'Attribution', 'Source']
+                # reorder column names
+                temp_df = temp_df[['Indicator', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
+                dns_dfs.append(temp_df[temp_df['Type'] == 'domain'])
+                # strip port number from ip address
+                temp_df['Indicator'] = temp_df['Indicator'].apply(lambda x: x if '|' not in x else x.split('|')[0])
+                ip_dfs.append(temp_df[temp_df['Type'] == 'ip-dst|port'])
+                ip_dfs.append(temp_df[temp_df['Type'] == 'ip-dst'])
+                url_dfs.append(temp_df[temp_df['Type'] == 'url'])
+                md5_dfs.append(temp_df[temp_df['Type'] == 'md5'])
+                sha256_dfs.append(temp_df[temp_df['Type'] == 'sha256'])
+                email_dfs.append(temp_df[temp_df['Type'] == 'email-src'])
 
 # use command line argument as out path or use script location
 if args.out_path:
