@@ -2,7 +2,10 @@ import utils
 import os
 
 def header():
-    return "\"Indicator type\",\"Indicator\",\"Description\""
+    return '"Indicator type","Indicator","Description"'
+
+def unquote_header():
+    return 'Indicator type,Indicator,Description'
 
 # must pass format [attribution]_[source]_[date].csv
 def parse_filename(full_filename):
@@ -45,6 +48,9 @@ def get_urls(temp_df):
 
 def get_md5s(temp_df):
     return temp_df[temp_df['Type'] == 'FileHash-MD5']
+
+def get_emails(temp_df):
+    return temp_df[temp_df['Type'] == 'email']
 
 def preprocess(in_file, full_filename):
     temp_df = utils.read_csv(in_file)

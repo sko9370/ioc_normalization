@@ -3,6 +3,8 @@ import pandas as pd
 
 def get_file_paths(topdir):
     extensions = ['.csv', '.xlsx']
+    if topdir.endswith(extensions[0]) or topdir.endswith(extensions[1]):
+        return [topdir]
     file_paths = []
     for dirpath, dirnames, files in os.walk(topdir):
         for name in files:
