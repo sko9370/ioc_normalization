@@ -304,10 +304,12 @@ if url_dfs:
     done_url_dfs.append(url_df)
     url_df = pd.concat(done_url_dfs)
     url_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    url_df = url_df[url_df['Indicator'] != ''].copy()
     url_df.to_csv(os.path.join(out_path, 'url_all.csv'), index = False)
 elif done_url_dfs:
     url_df = pd.concat(done_url_dfs)
     url_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    url_df = url_df[url_df['Indicator'] != ''].copy()
     url_df.to_csv(os.path.join(out_path, 'url_all.csv'), index = False)
 if dns_dfs:
     dns_df = pd.concat(dns_dfs)
@@ -317,6 +319,7 @@ if dns_dfs:
     done_dns_dfs.append(dns_df)
     dns_df = pd.concat(done_dns_dfs)
     dns_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    dns_df = dns_df[dns_df['Indicator'] != ''].copy()
     if args.wildcard:
         dns_df['Wildcard'] = dns_df['Indicator'].apply(lambda x: '*' + x + '*')
         dns_df = dns_df[['Indicator', 'Wildcard', 'Published', 'Updated', 'Context']]
@@ -324,19 +327,24 @@ if dns_dfs:
 elif done_dns_dfs:
     dns_df = pd.concat(done_dns_dfs)
     dns_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    dns_df = dns_df[dns_df['Indicator'] != ''].copy()
     dns_df.to_csv(os.path.join(out_path, 'dns_all.csv'), index = False)
 if ip_dfs:
     ip_df = pd.concat(ip_dfs)
     ip_df.drop(['Type'], axis=1, inplace=True)
     #print(ip_df)
     # add in finished csvs
+    ip_df['Indicator'] = ip_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
     done_ip_dfs.append(ip_df)
     ip_df = pd.concat(done_ip_dfs)
     ip_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    ip_df = ip_df[ip_df['Indicator'] != ''].copy()
     ip_df.to_csv(os.path.join(out_path, 'ip_all.csv'), index = False)
 elif done_ip_dfs:
     ip_df = pd.concat(done_ip_dfs)
     ip_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    ip_df['Indicator'] = ip_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+    ip_df = ip_df[ip_df['Indicator'] != ''].copy()
     ip_df.to_csv(os.path.join(out_path, 'ip_all.csv'), index = False)
 if md5_dfs:
     md5_df = pd.concat(md5_dfs)
@@ -346,6 +354,7 @@ if md5_dfs:
     done_md5_dfs.append(md5_df)
     md5_df = pd.concat(done_md5_dfs)
     md5_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    md5_df = md5_df[md5_df['Indicator'] != ''].copy()
     md5_df.to_csv(os.path.join(out_path, 'md5_all.csv'), index = False)
 
     # write loki format
@@ -368,6 +377,7 @@ if md5_dfs:
 elif done_md5_dfs:
     md5_df = pd.concat(done_md5_dfs)
     md5_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    md5_df = md5_df[md5_df['Indicator'] != ''].copy()
     md5_df.to_csv(os.path.join(out_path, 'md5_all.csv'), index = False)
     # write loki format
     with open(os.path.join(out_path, 'md5_all.csv'), 'r') as in_file:
@@ -395,10 +405,12 @@ if sha1_dfs:
     done_sha1_dfs.append(sha1_df)
     sha1_df = pd.concat(done_sha1_dfs)
     sha1_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    sha1_df = sha1_df[sha1_df['Indicator'] != ''].copy()
     sha1_df.to_csv(os.path.join(out_path, 'sha1_all.csv'), index = False)
 elif done_sha1_dfs:
     sha1_df = pd.concat(done_sha1_dfs)
     sha1_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    sha1_df = sha1_df[sha1_df['Indicator'] != ''].copy()
     sha1_df.to_csv(os.path.join(out_path, 'sha1_all.csv'), index = False)
 if sha256_dfs:
     sha256_df = pd.concat(sha256_dfs)
@@ -408,10 +420,12 @@ if sha256_dfs:
     done_sha256_dfs.append(sha256_df)
     sha256_df = pd.concat(done_sha256_dfs)
     sha256_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    sha256_df = sha256_df[sha256_df['Indicator'] != ''].copy()
     sha256_df.to_csv(os.path.join(out_path, 'sha256_all.csv'), index = False)
 elif done_sha256_dfs:
     sha256_df = pd.concat(done_sha256_dfs)
     sha256_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    sha256_df = sha256_df[sha256_df['Indicator'] != ''].copy()
     sha256_df.to_csv(os.path.join(out_path, 'sha256_all.csv'), index = False)
 if email_dfs:
     email_df = pd.concat(email_dfs)
@@ -421,10 +435,12 @@ if email_dfs:
     done_email_dfs.append(email_df)
     email_df = pd.concat(done_email_dfs)
     email_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    email_df = email_df[email_df['Indicator'] != ''].copy()
     email_df.to_csv(os.path.join(out_path, 'email_all.csv'), index = False)
 elif done_email_dfs:
     email_df = pd.concat(done_email_dfs)
     email_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    email_df = email_df[email_df['Indicator'] != ''].copy()
     email_df.to_csv(os.path.join(out_path, 'email_all.csv'), index = False)
 if len(ja3_dfs) > 0:
     ja3_df = pd.concat(ja3_dfs)
@@ -434,8 +450,10 @@ if len(ja3_dfs) > 0:
     done_ja3_dfs.append(ja3_df)
     ja3_df = pd.concat(done_ja3_dfs)
     ja3_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    ja3_df = ja3_df[ja3_df['Indicator'] != ''].copy()
     ja3_df.to_csv(os.path.join(out_path, 'ja3_all.csv'), index = False)
 elif done_ja3_dfs:
     ja3_df = pd.concat(done_ja3_dfs)
     ja3_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    ja3_df = ja3_df[ja3_df['Indicator'] != ''].copy()
     ja3_df.to_csv(os.path.join(out_path, 'ja3_all.csv'), index = False)
