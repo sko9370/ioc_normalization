@@ -6,12 +6,6 @@ from datetime import datetime
 from datetime import date
 from urllib.parse import urlparse
 
-import utils
-import alienvault
-import crowdstrike
-import mandiant
-import threatfox
-
 # parses command line for path argument
 parser = argparse.ArgumentParser()
 parser.add_argument('-p', '--path', type=str, help='Specify target path of IOC CSVs')
@@ -24,7 +18,28 @@ if not args.path:
 
 # expecting top level directory with sub-directories named according to source
 # alienvault (av), mandiant (md), crowdstrike (cs), threatfox (tf)
-av_files, md_files, cs_files, tf_files, ct_files = utils.get_file_paths(args.path)
+def get_file_paths(topdir):
+    av_files = []
+    md_files = []
+    cs_files = []
+    tf_files = []
+    ct_files = []
+    for dirpath, dirnames, files in os.walk(topdir):
+        for name in files:
+            if name.lower().endswith('csv'):
+                if 'alienvault' in dirpath:
+                    av_files.append(os.path.join(dirpath, name))
+                elif 'mandiant' in dirpath:
+                    md_files.append(os.path.join(dirpath, name))
+                elif 'crowdstrike' in dirpath:
+                    cs_files.append(os.path.join(dirpath, name))
+                elif 'threatfox' in dirpath:
+                    tf_files.append(os.path.join(dirpath, name))
+                elif 'custom' in dirpath:
+                    ct_files.append(os.path.join(dirpath, name))
+    return av_files, md_files, cs_files, tf_files, ct_files
+
+av_files, md_files, cs_files, tf_files, ct_files = get_file_paths(args.path)
 
 # list of dataframes to be merged at the end
 dns_dfs = []
