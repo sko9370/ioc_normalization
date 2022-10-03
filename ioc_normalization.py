@@ -7,6 +7,18 @@ from datetime import datetime
 from datetime import date
 from urllib.parse import urlparse
 
+# parses command line for path argument
+parser = argparse.ArgumentParser()
+parser.add_argument('-p', '--path', type=str, help='Specify target path of IOC CSVs')
+parser.add_argument('-o', '--out_path', type=str, help='Specify output file path')
+args, commands = parser.parse_known_args()
+
+if not args.path:
+    print('Must provide input CSVs\' path using -p')
+    sys.exit(1)
+
+# expecting top level directory with sub-directories named according to source
+# alienvault (av), mandiant (md), crowdstrike (cs), threatfox (tf)
 def get_file_paths(topdir):
     av_files = []
     md_files = []
