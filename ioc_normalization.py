@@ -256,7 +256,7 @@ if url_dfs:
     parsed_dns_df.dropna(inplace=True)
     dns_dfs.append(parsed_dns_df)
     ####### CANARY #######
-    print('CANARYYYYY')
+    #print('CANARYYYYY')
     # parse out path and add as new field
     url_df['Path'] = url_df['Indicator'].apply(lambda x: urlparse(x).path)
     url_df = url_df.loc[:,('Indicator', 'Path', 'Type', 'Updated', 'Attribution', 'Source')]
@@ -280,7 +280,7 @@ if dns_dfs:
     wl_df.drop(wl_df.index[100:], inplace=True)
     wl_df.rename(columns = {'Domain':'Indicator'}, inplace=True)
     # view domain matches against whitelist
-    print(dns_df.merge(wl_df, on='Indicator', how='inner'))
+    #print(dns_df.merge(wl_df, on='Indicator', how='inner'))
     # left excluding join
     # https://stackoverflow.com/questions/53645882/pandas-merging-101/53645883#53645883
     dns_df = dns_df.merge(wl_df['Indicator'], on='Indicator', how='left', indicator=True).query('_merge == "left_only"').drop(columns=['_merge'], axis=1)
@@ -293,6 +293,11 @@ if ip_dfs:
     ip_df = ip_df[ip_df['Indicator'] != '']
     ip_df.to_csv(os.path.join(out_path, 'ip_all.csv'), index = False)
 if md5_dfs:
+    md5_df = pd.concat(md5_dfs)
+    md5_df.drop(['Type'], axis=1, inplace=True)
+    md5_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    md5_df = md5_df[md5_df['Indicator'] != '']
+    md5_df.to_csv(os.path.join(out_path, 'md5_all.csv'), index = False)
     with open(os.path.join(out_path, 'loki.txt'), 'w') as file:
         md5_df.loc[md5_df['Attribution'] == '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source']
         md5_df.loc[md5_df['Attribution'] != '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source'] + ', ' + 'Attribution: ' + md5_df['Attribution']
