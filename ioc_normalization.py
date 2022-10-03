@@ -2,32 +2,50 @@ import argparse
 import os, sys
 import csv
 import pandas as pd
+import requests
 from datetime import datetime
 from datetime import date
 from urllib.parse import urlparse
-
-import utils
-import alienvault
-import crowdstrike
-import mandiant
-import threatfox
 
 # parses command line for path argument
 parser = argparse.ArgumentParser()
 parser.add_argument('-p', '--path', type=str, help='Specify target path of IOC CSVs')
 parser.add_argument('-o', '--out_path', type=str, help='Specify output file path')
-parser.add_argument('-w', '--wildcard', action='store_true', help='Turn on wildcard column for dns for more flexible matching')
 args, commands = parser.parse_known_args()
 
 if not args.path:
     print('Must provide input CSVs\' path using -p')
     sys.exit(1)
 
-# get file paths for all csvs in target path by searching recursively for *.csv
-file_paths = utils.get_file_paths(args.path)
+# expecting top level directory with sub-directories named according to source
+# alienvault (av), mandiant (md), crowdstrike (cs), threatfox (tf)
+def get_file_paths(topdir):
+    av_files = []
+    md_files = []
+    cs_files = []
+    tf_files = []
+    ct_files = []
+    og_files = []
+    for dirpath, dirnames, files in os.walk(topdir):
+        for name in files:
+            if name.lower().endswith('csv'):
+                if 'alienvault' in dirpath:
+                    av_files.append(os.path.join(dirpath, name))
+                elif 'mandiant' in dirpath:
+                    md_files.append(os.path.join(dirpath, name))
+                elif 'crowdstrike' in dirpath:
+                    cs_files.append(os.path.join(dirpath, name))
+                elif 'threatfox' in dirpath:
+                    tf_files.append(os.path.join(dirpath, name))
+                elif 'custom' in dirpath:
+                    ct_files.append(os.path.join(dirpath, name))
+                elif 'old' in dirpath:
+                    og_files.append(os.path.join(dirpath,name))
+    return av_files, md_files, cs_files, tf_files, ct_files, og_files
 
-# take in different sources based on header (line 1 of csv)
-# then organize based on indicator type
+av_files, md_files, cs_files, tf_files, ct_files, og_files = get_file_paths('IOC/SOCIUS')
+
+# list of dataframes to be merged at the end
 dns_dfs = []
 ip_dfs = []
 url_dfs = []
@@ -37,338 +55,289 @@ sha256_dfs = []
 email_dfs = []
 ja3_dfs = []
 
-# preprocessing of input csvs
-for file_path in file_paths:
-    with open(file_path) as in_file:
-        try:
-            header = in_file.readline().rstrip()
-            # reset file pointer so .read_csv can see headers
-            in_file.seek(0)
-        except:
-            header = ''
-        full_filename = os.path.basename(file_path)
-        # check for AlienVault header
-        if alienvault.header() in header:
-            temp_df = alienvault.preprocess(in_file, full_filename)
-            # distribute IOCs to respective dataframes by type
-            dns_dfs.append(alienvault.get_domains(temp_df))
-            dns_dfs.append(alienvault.get_hostnames(temp_df))
-            ip_dfs.append(alienvault.get_ips(temp_df))
-            url_dfs.append(alienvault.get_urls(temp_df))
-            md5_dfs.append(alienvault.get_md5s(temp_df))
-            #ja3_dfs.append(temp_df[temp_df['Type'] == 'JA3'])
-        elif alienvault.unquote_header() in header:
-            temp_df = alienvault.preprocess(in_file, full_filename)
-            # distribute IOCs to respective dataframes by type
-            dns_dfs.append(alienvault.get_domains(temp_df))
-            dns_dfs.append(alienvault.get_hostnames(temp_df))
-            ip_dfs.append(alienvault.get_ips(temp_df))
-            url_dfs.append(alienvault.get_urls(temp_df))
-            md5_dfs.append(alienvault.get_md5s(temp_df))
-            email_dfs.append(alienvault.get_emails(temp_df))
-        # check for CrowdStrike header
-        elif crowdstrike.header() in header:
-            temp_df = crowdstrike.preprocess(in_file)
-            dns_dfs.append(crowdstrike.get_domains(temp_df))
-            ip_dfs.append(crowdstrike.get_ips(temp_df))
-            url_dfs.append(crowdstrike.get_urls(temp_df))
-            md5_dfs.append(crowdstrike.get_md5s(temp_df))
-            # ja3??
-        # check for FireEye header
-        # files have an odd character in line so can't do an exact match
-        elif mandiant.header() in header:
-            temp_df = mandiant.preprocess(in_file)
-            dns_dfs.append(mandiant.get_domains(temp_df))
-            ip_dfs.append(mandiant.get_ips(temp_df))
-            url_dfs.append(mandiant.get_urls(temp_df))
-            md5_dfs.append(mandiant.get_md5s(temp_df))
-            sha1_dfs.append(mandiant.get_sha1s(temp_df))
-            sha256_dfs.append(mandiant.get_sha256s(temp_df))
-            # ja3??
-        elif 'uuid,event_id,category,type,value,comment,to_ids,date,object_relation,attribute_tag,object_uuid' in header:
-            temp_df = pd.read_csv(file_path)
-            temp_df = temp_df[['type', 'value', 'date']]
-            date_num = pd.to_numeric(temp_df['date']).copy()
-            temp_df = temp_df[temp_df['date'] > 1635739200]
-            temp_df['Published'] = temp_df['date'].apply(lambda x: date.fromtimestamp(x).isoformat()).copy()
-            temp_df['Updated'] = temp_df['Published'].copy()
-            temp_df['Attribution'] = ''
-            temp_df['Source'] = 'ICOAST'
-            temp_df.drop(['date'], axis=1, inplace=True)
-            temp_df = temp_df.rename(columns = {'type':'Type', 'value':'Indicator'}).copy()
-            
-            ip_dfs.append(temp_df[temp_df['Type'] == 'ip-dst'])
-            ip_dfs.append(temp_df[temp_df['Type'] == 'ip-dst|port'])
-            url_dfs.append(temp_df[temp_df['Type'] == 'url'])
-            md5_dfs.append(temp_df[temp_df['Type'] == 'md5'])
-            sha256_dfs.append(temp_df[temp_df['Type'] == 'sha256'])
-            email_dfs.append(temp_df[temp_df['Type'] == 'email-src'])
-        elif 'event_id,category,type,value,event_date,attribute_tag' in header:
-            temp_df = pd.read_csv(file_path, encoding='cp1252')
-            # create Published and Updated columns from modified date
-            temp_df['Published'] = temp_df['event_date'].apply(lambda x: datetime.strptime(x, "%m/%d/%Y").isoformat())
-            temp_df['Updated'] = temp_df['event_date'].apply(lambda x: datetime.strptime(x, "%m/%d/%Y").isoformat())
-            temp_df['comment'] = ''
-            # need to replace NaN's (NONE in pandas) with empty strings to concatenate
-            temp_df.fillna('', inplace=True)
-            temp_df['Attribution'] = ''
-            # create Source column
-            temp_df['Source'] = 'icoast'
-            # drop unnecessary columns
-            unnecessary_columns = [temp_df.columns[0], 'attribute_tag', 'category', 'event_date']
-            temp_df.drop(unnecessary_columns, axis=1, inplace=True)
-            # normalize column names
-            temp_df.rename(columns = {'type':'Type', 'value':'Indicator'}, inplace=True)
-            # reorder column names
-            temp_df = temp_df[['Indicator', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
-            dns_dfs.append(temp_df[temp_df['Type'] == 'domain'])
-            # strip port number from ip address
-            temp_df['Indicator'] = temp_df['Indicator'].apply(lambda x: x if '|' not in x else x.split('|')[0])
-            ip_dfs.append(temp_df[temp_df['Type'] == 'ip-dst|port'])
-            ip_dfs.append(temp_df[temp_df['Type'] == 'ip-dst'])
-            url_dfs.append(temp_df[temp_df['Type'] == 'url'])
-            md5_dfs.append(temp_df[temp_df['Type'] == 'md5'])
-            sha256_dfs.append(temp_df[temp_df['Type'] == 'sha256'])
-            email_dfs.append(temp_df[temp_df['Type'] == 'email-src'])
-        elif "full.csv" in full_filename:
-            temp_df = threatfox.preprocess(in_file)
-            dns_dfs.append(threatfox.get_domains(temp_df))
-            ip_dfs.append(threatfox.get_ips(temp_df))
-            url_dfs.append(threatfox.get_urls(temp_df))
-            md5_dfs.append(threatfox.get_md5s(temp_df))
-            sha1_dfs.append(threatfox.get_sha1s(temp_df))
-            sha256_dfs.append(threatfox.get_sha256s(temp_df))
+### AlienVault processing ###
+# must pass format [attribution]_[source]_[date].csv
+def parse_filename(full_filename):
+    attribution = ''
+    attribution, source, end = full_filename.split('_')
+    date_field, ext = os.path.splitext(end)
+    return attribution, source, date_field
 
-# use command line argument as out path or use script location
+for filepath in av_files:
+    # get filename from filepath
+    filename = os.path.basename(filepath)
+    # get additional fields from filename since AlienVault CSVs only have 3 fields
+    attribution, source, date_field = parse_filename(filename)
+    # read in CSV at filepath as a dataframe
+    temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+    temp_df.fillna('', inplace=True)
+    # add attribution field based on filename
+    # uses loc to return boolean based series and specifies new column name
+    # https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.loc.html
+    temp_df.loc[temp_df['Description'] == '', 'Attribution'] = attribution 
+    temp_df.loc[temp_df['Description'] != '', 'Attribution'] = attribution + ': ' + temp_df['Description']
+    # add date field based on filename
+    temp_df['Updated'] = date_field
+    # add source field based on filename
+    temp_df['Source'] = source
+    # drop Description column
+    temp_df.drop(['Description'], axis=1, inplace=True)
+    # rename columns
+    temp_df.rename(columns = {'Indicator type':'Type'}, inplace=True)
+    # reorder columns
+    temp_df = temp_df[['Indicator', 'Type', 'Updated', 'Attribution', 'Source']].copy()
+    # add IOCs to dataframe lists by type
+    dns_dfs.append(temp_df[temp_df['Type'] == 'domain'].copy())
+    dns_dfs.append(temp_df[temp_df['Type'] == 'hostname'].copy())
+    ip_dfs.append(temp_df[temp_df['Type'] == 'IPv4'].copy())
+    url_dfs.append(temp_df[temp_df['Type'] == 'URL'].copy())
+    md5_dfs.append(temp_df[temp_df['Type'] == 'FileHash-MD5'].copy())
+    sha1_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA1'].copy())
+    sha256_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA256'].copy())
+    email_dfs.append(temp_df[temp_df['Type'] == 'email'].copy())### AlienVault processing ###
+# must pass format [attribution]_[source]_[date].csv
+def parse_filename(full_filename):
+    attribution = ''
+    attribution, source, end = full_filename.split('_')
+    date_field, ext = os.path.splitext(end)
+    return attribution, source, date_field
+
+for filepath in av_files:
+    # get filename from filepath
+    filename = os.path.basename(filepath)
+    # get additional fields from filename since AlienVault CSVs only have 3 fields
+    attribution, source, date_field = parse_filename(filename)
+    # read in CSV at filepath as a dataframe
+    temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+    temp_df.fillna('', inplace=True)
+    # add attribution field based on filename
+    # uses loc to return boolean based series and specifies new column name
+    # https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.loc.html
+    temp_df.loc[temp_df['Description'] == '', 'Attribution'] = attribution 
+    temp_df.loc[temp_df['Description'] != '', 'Attribution'] = attribution + ': ' + temp_df['Description']
+    # add date field based on filename
+    temp_df['Updated'] = date_field
+    # add source field based on filename
+    temp_df['Source'] = source
+    # drop Description column
+    temp_df.drop(['Description'], axis=1, inplace=True)
+    # rename columns
+    temp_df.rename(columns = {'Indicator type':'Type'}, inplace=True)
+    # reorder columns
+    temp_df = temp_df[['Indicator', 'Type', 'Updated', 'Attribution', 'Source']].copy()
+    # add IOCs to dataframe lists by type
+    dns_dfs.append(temp_df[temp_df['Type'] == 'domain'].copy())
+    ip_dfs.append(temp_df[temp_df['Type'] == 'IPv4'].copy())
+    url_dfs.append(temp_df[temp_df['Type'] == 'URL'].copy())
+    md5_dfs.append(temp_df[temp_df['Type'] == 'FileHash-MD5'].copy())
+    email_dfs.append(temp_df[temp_df['Type'] == 'email'].copy())
+for filepath in cs_files:
+    # get filename from filepath
+    filename = os.path.basename(filepath)
+    # read in CSV at filepath as a dataframe
+    temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+    temp_df.fillna('', inplace=True)
+    # add attribution by parsing actors and malware_families column
+    temp_df.loc[(temp_df['malware_families'] != '') & (temp_df['actors'] != ''), 'Attribution'] = 'Actors(s): ' + temp_df['actors'] + '; Malware: ' + temp_df['malware_families']
+    # assume all IOCs are linked to either an actor or malware family
+    temp_df.loc[temp_df['malware_families'] == '', 'Attribution'] = 'Actors(s): ' + temp_df['actors']
+    temp_df.loc[temp_df['actors'] == '', 'Attribution'] = 'Malware: ' + temp_df['malware_families']
+    # drop unnecessary columns
+    unnecessary_columns = ['reports','kill_chains','malicious_confidence', 'labels', 'actors', 'malware_families', 'published_date']
+    temp_df.drop(unnecessary_columns, axis=1, inplace=True)
+    # rename columns
+    temp_df.rename(columns = {'indicator':'Indicator', 'type':'Type', 'last_updated':'Updated'}, inplace=True)
+    # add dates field parsed
+    temp_df['Updated'] = temp_df['Updated'].apply(lambda x: x[:10])
+    # add source field
+    temp_df['Source'] = "CrowdStrike"
+    # reorder columns
+    temp_df = temp_df[['Indicator', 'Type', 'Updated', 'Attribution', 'Source']].copy()
+    # add IOCs to dataframe lists by type
+    ## TODO: add other types like ja3 and email ##
+    dns_dfs.append(temp_df[temp_df['Type'] == 'domain'].copy())
+    ip_dfs.append(temp_df[temp_df['Type'] == 'ip_address'].copy())
+    url_dfs.append(temp_df[temp_df['Type'] == 'url'].copy())
+    md5_dfs.append(temp_df[temp_df['Type'] == 'hash_md5'].copy())
+    sha1_dfs.append(temp_df[temp_df['Type'] == 'hash_sha1'].copy())
+    sha256_dfs.append(temp_df[temp_df['Type'] == 'hash_sha256'].copy())
+for filepath in md_files:
+    # read in CSV at filepath as a dataframe
+    temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+    temp_df.fillna('', inplace=True)
+    # drop unnecessary columns
+    unnecessary_columns = ['Exclusive', 'First Seen']
+    temp_df.drop(unnecessary_columns, axis=1, inplace=True)
+    # rename columns
+    temp_df.rename(columns = {'Indicator Value':'Indicator', 'Indicator Type':'Type', 'Last Seen':'Updated', 'Associations':'Attribution'}, inplace=True)
+    # add source
+    temp_df['Source'] = 'Mandiant FireEye' 
+    # reorder columns
+    temp_df = temp_df.loc[:,('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
+    # reformat dates
+    temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%B %d, %Y').strftime('%Y-%m-%d'))
+    # add IOCs to dataframe lists by type
+    dns_dfs.append(temp_df[temp_df['Type'] == 'FQDN'].copy())
+    ip_dfs.append(temp_df[temp_df['Type'] == 'IPV4'].copy())
+    url_dfs.append(temp_df[temp_df['Type'] == 'URL'].copy())
+    md5_dfs.append(temp_df[temp_df['Type'] == 'MD5'].copy())
+    sha1_dfs.append(temp_df[temp_df['Type'] == 'SHA1'].copy())
+    sha256_dfs.append(temp_df[temp_df['Type'] == 'SHA256'].copy())
+for filepath in tf_files:
+    # read in CSV at filepath as a dataframe
+    temp_df = pd.read_csv(filepath, skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
+    temp_df.fillna('', inplace=True)
+    # add source
+    temp_df['Source'] = temp_df['reporter'].copy()
+    # add attribution
+    temp_df['Attribution'] = temp_df['tags']
+    # rename columns
+    temp_df.rename(columns = {'ioc_value':'Indicator', 'ioc_type':'Type', '# "first_seen_utc"':'Updated'}, inplace=True)
+    # drop columns
+    unnecessary_columns = ['ioc_id', 'threat_type', 'fk_malware', 'malware_alias', 'malware_printable', 'confidence_level', 'anonymous', 'reporter', 'reference', 'tags', 'last_seen_utc']
+    temp_df.drop(unnecessary_columns, axis=1, inplace=True)
+    # reorder columns
+    temp_df = temp_df.loc[:, ('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
+    # reformat dates
+    temp_df['Updated'] = temp_df['Updated'].apply(lambda x: x[:10])
+    # add IOCs to dataframe lists by type
+    dns_dfs.append(temp_df[temp_df['Type'] == 'domain'].copy())
+    ip_dfs.append(temp_df[temp_df['Type'] == 'ip:port'].copy())
+    url_dfs.append(temp_df[temp_df['Type'] == 'url'].copy())
+    md5_dfs.append(temp_df[temp_df['Type'] == 'md5_hash'].copy())
+    sha1_dfs.append(temp_df[temp_df['Type'] == 'sha1_hash'].copy())
+    sha256_dfs.append(temp_df[temp_df['Type'] == 'sha256_hash'].copy())
+for filepath in ct_files:
+    # get filename from filepath
+    filename = os.path.basename(filepath)
+    # read in CSV at filepath as a dataframe
+    temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+    temp_df.fillna('', inplace=True)
+    # add IOCs to dataframe lists by type
+    dns_dfs.append(temp_df[temp_df['Type'] == 'domain'].copy())
+    dns_dfs.append(temp_df[temp_df['Type'] == 'hostname'].copy())
+    ip_dfs.append(temp_df[temp_df['Type'] == 'IPv4'].copy())
+    url_dfs.append(temp_df[temp_df['Type'] == 'URL'].copy())
+    md5_dfs.append(temp_df[temp_df['Type'] == 'FileHash-MD5'].copy())
+    sha1_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA1'].copy())
+    sha256_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA256'].copy())
+    email_dfs.append(temp_df[temp_df['Type'] == 'email'].copy())
+for filepath in og_files:
+    if 'ip' in filepath:
+        temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+        temp_df.insert(1,'Type','')
+        ip_dfs.append(temp_df.copy())
+    elif 'dns' in filepath:
+        temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+        temp_df.insert(1,'Type','')
+        dns_dfs.append(temp_df.copy())
+    elif 'md5' in filepath:
+        temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+        temp_df.insert(1,'Type','')
+        md5_dfs.append(temp_df.copy())
+    elif 'url' in filepath:
+        temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+        temp_df.insert(1,'Type','')
+        url_dfs.append(temp_df.copy())
+    elif 'sha1' in filepath:
+        temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+        temp_df.insert(1,'Type','')
+        sha1_dfs.append(temp_df.copy())
+    elif 'sha256' in filepath:
+        temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+        temp_df.insert(1,'Type','')
+        sha256_dfs.append(temp_df.copy())
+    elif 'email' in filepath:
+        temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
+        temp_df.insert(1,'Type','')
+        email_dfs.append(temp_df.copy())
+# add most recent tor exit node list
+# https://check.torproject.org/torbulkexitlist
+url = 'https://check.torproject.org/torbulkexitlist'
+response = requests.get(url)
+tor_exit_ips = response.content.decode("utf-8").splitlines()
+tor_df = pd.DataFrame(tor_exit_ips, columns=['Indicator'])
+tor_df['Updated'] = date.today()
+tor_df['Type'] = ''
+tor_df['Attribution'] = 'tor exit node'
+tor_df['Source'] = 'https://check.torproject.org/torbulkexitlist'
+ip_dfs.append(tor_df.copy())
+
 if args.out_path:
     out_path = args.out_path
 else:
     out_path = args.path
 
-# validate IP address function
-def validate_ip(address):
-    try:
-        for octet in str(address).split('.'):
-            if int(octet) < 0 or int(octet) > 255:
-                return False
-        return True
-    except:
-        return False
-
-# parse domain function
-def get_domain(url):
-    o = urlparse(url)
-    return o.netloc.split(':')[0]
-
-
-# merge in pre-normed IOC files
-done_url_dfs = []
-done_dns_dfs = []
-done_ip_dfs = []
-done_md5_dfs = []
-done_sha1_dfs = []
-done_sha256_dfs = []
-done_email_dfs = []
-done_ja3_dfs = []
-for file_path in file_paths:
-    with open(file_path) as in_file:
-        full_filename = os.path.basename(file_path)
-        if full_filename == 'url_all.csv':
-            done_url_dfs.append(pd.read_csv(in_file))
-        elif full_filename == 'dns_all.csv':
-            done_dns_dfs.append(pd.read_csv(in_file))
-        elif full_filename == 'ip_all.csv':
-            done_ip_dfs.append(pd.read_csv(in_file))
-        elif full_filename == 'md5_all.csv':
-            done_md5_dfs.append(pd.read_csv(in_file))
-        elif full_filename == 'sha1_all.csv':
-            done_sha1_dfs.append(pd.read_csv(in_file))
-        elif full_filename == 'sha256_all.csv':
-            done_sha256_dfs.append(pd.read_csv(in_file))
-        elif full_filename == 'email_all.csv':
-            done_email_dfs.append(pd.read_csv(in_file))
-        elif full_filename == 'ja3_all.csv':
-            done_ja3_dfs.append(pd.read_csv(in_file))
-
-
-# have to check if list of dfs is empty because .concat will throw error
-# deduplicate
-# write out to csv
-# check for args.wildcard commandline argument and add wildcard column if enabled
 if url_dfs:
+    # merge all url dataframes from url df list together
     url_df = pd.concat(url_dfs)
-    # parse out IPs and add to ip_dfs
-    url_df['IP'] = url_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
-    url_df.fillna('', inplace=True)
-    url_df['IP'] = url_df['IP'].apply(lambda x: x if validate_ip(x) else '')
-    temp_df = url_df[['IP', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
-    temp_df = temp_df[temp_df['IP'].astype(bool)].copy()
-    temp_df.rename(columns = {'IP':'Indicator'}, inplace=True)
-    temp_df = temp_df[['Indicator', 'Type', 'Published', 'Updated', 'Attribution', 'Source']]
-    ip_dfs.append(temp_df)
-    # parse out domain and add to dns_dfs
-    # some domains are false positives, hold off on this
-    url_df['Domain'] = url_df['Indicator'].apply(lambda x: get_domain(x))
-    # parse out path
-    url_df['Path'] = url_df['Indicator'].str.extract(r'[\.:][a-zA-Z0-9]+(/.+$)')
-    url_df['Path'] = url_df['Path'].apply(lambda x: x if x != '\\' else '')
-    #url_df.drop(['Type', 'IP'], axis=1, inplace=True)
-    url_df.drop(['Type'], axis=1, inplace=True)
-    url_df = url_df[['Indicator', 'Domain', 'IP', 'Path', 'Published', 'Updated', 'Attribution', 'Source']]
-    # add in finished csvs
-    done_url_dfs.append(url_df)
-    url_df = pd.concat(done_url_dfs)
+    # parse out domains and IPs to add to DNS dataframe and IP dataframe
+    parsed_dns_df = url_df.copy()
+    parsed_dns_df['Indicator'] = parsed_dns_df['Indicator'].apply(lambda x: urlparse(x).hostname)
+    parsed_ip_df = parsed_dns_df.copy()
+    parsed_ip_df['Indicator'] = parsed_ip_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+    parsed_ip_df.dropna(inplace=True)
+    ip_dfs.append(parsed_ip_df)
+    # delete all IPs and only send domains
+    parsed_dns_df['IP'] = parsed_dns_df['Indicator'].str.match(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+    parsed_dns_df = parsed_dns_df[parsed_dns_df.IP != True]
+    parsed_dns_df.drop(['IP'], axis=1, inplace=True)
+    parsed_dns_df.dropna(inplace=True)
+    dns_dfs.append(parsed_dns_df)
+    ####### CANARY #######
+    #print('CANARYYYYY')
+    # parse out path and add as new field
+    url_df['Path'] = url_df['Indicator'].apply(lambda x: urlparse(x).path)
+    url_df = url_df.loc[:,('Indicator', 'Path', 'Type', 'Updated', 'Attribution', 'Source')]
     url_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    url_df = url_df[url_df['Indicator'] != ''].copy()
-    url_df.to_csv(os.path.join(out_path, 'url_all.csv'), index = False)
-elif done_url_dfs:
-    url_df = pd.concat(done_url_dfs)
-    url_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    url_df = url_df[url_df['Indicator'] != ''].copy()
+    # sanity check for empty rows
+    url_df = url_df[url_df['Indicator'] != '']
     url_df.to_csv(os.path.join(out_path, 'url_all.csv'), index = False)
 if dns_dfs:
     dns_df = pd.concat(dns_dfs)
     dns_df.drop(['Type'], axis=1, inplace=True)
-    #print(dns_df)
-    # add in finished csvs
-    done_dns_dfs.append(dns_df)
-    dns_df = pd.concat(done_dns_dfs)
     dns_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    dns_df = dns_df[dns_df['Indicator'] != ''].copy()
-    if args.wildcard:
-        dns_df['Wildcard'] = dns_df['Indicator'].apply(lambda x: '*' + x + '*')
-        dns_df = dns_df[['Indicator', 'Wildcard', 'Published', 'Updated', 'Context']]
-    dns_df.to_csv(os.path.join(out_path, 'dns_all.csv'), index = False)
-elif done_dns_dfs:
-    dns_df = pd.concat(done_dns_dfs)
-    dns_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    dns_df = dns_df[dns_df['Indicator'] != ''].copy()
+    dns_df = dns_df[dns_df['Indicator'] != '']
+    # filter out top 100 domains from majestic million whitelist to prevent false positives from url IOCs
+    url = 'https://downloads.majestic.com/majestic_million.csv'
+    response = requests.get(url)
+    csvtext = response.content.decode('utf-8')
+    cols = csvtext.split('\n')[0].split(',')
+    wl_df = pd.DataFrame([row.split(',') for row in csvtext.split('\n')[1:]], columns=cols)
+    #print(wl_df)
+    # only keep top 100 domains
+    wl_df.drop(wl_df.index[100:], inplace=True)
+    wl_df.rename(columns = {'Domain':'Indicator'}, inplace=True)
+    # view domain matches against whitelist
+    #print(dns_df.merge(wl_df, on='Indicator', how='inner'))
+    # left excluding join
+    # https://stackoverflow.com/questions/53645882/pandas-merging-101/53645883#53645883
+    dns_df = dns_df.merge(wl_df['Indicator'], on='Indicator', how='left', indicator=True).query('_merge == "left_only"').drop(columns=['_merge'], axis=1)
     dns_df.to_csv(os.path.join(out_path, 'dns_all.csv'), index = False)
 if ip_dfs:
     ip_df = pd.concat(ip_dfs)
     ip_df.drop(['Type'], axis=1, inplace=True)
-    #print(ip_df)
-    # add in finished csvs
     ip_df['Indicator'] = ip_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
-    done_ip_dfs.append(ip_df)
-    ip_df = pd.concat(done_ip_dfs)
     ip_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    ip_df = ip_df[ip_df['Indicator'] != ''].copy()
-    ip_df.to_csv(os.path.join(out_path, 'ip_all.csv'), index = False)
-elif done_ip_dfs:
-    ip_df = pd.concat(done_ip_dfs)
-    ip_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    ip_df['Indicator'] = ip_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
-    ip_df = ip_df[ip_df['Indicator'] != ''].copy()
+    ip_df = ip_df[ip_df['Indicator'] != '']
     ip_df.to_csv(os.path.join(out_path, 'ip_all.csv'), index = False)
 if md5_dfs:
     md5_df = pd.concat(md5_dfs)
     md5_df.drop(['Type'], axis=1, inplace=True)
-    #print(md5_df)
-    # add in finished csvs
-    done_md5_dfs.append(md5_df)
-    md5_df = pd.concat(done_md5_dfs)
     md5_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    md5_df = md5_df[md5_df['Indicator'] != ''].copy()
+    md5_df = md5_df[md5_df['Indicator'] != '']
     md5_df.to_csv(os.path.join(out_path, 'md5_all.csv'), index = False)
-
-    # write loki format
-    with open(os.path.join(out_path, 'md5_all.csv'), 'r') as in_file:
-        with open(os.path.join(out_path, 'pre_loki.txt'), 'w') as file:
-            rows = csv.DictReader(in_file, fieldnames=['Indicator', 'Published', 'Updated', 'Attribution', 'Source'])
-            for row in rows:
-                comment = ', '.join(filter(None, ['Attribution: ' + row['Attribution'], 'Source: ' + row['Source']]))
-                file.write(row['Indicator'] + '; ' + comment + 'Downloaded: ' + row['Published'] + '\n')
-
-    # can't figure out why some extra lines starting with the previous line's description, had to manually filter them out
-    with open(os.path.join(out_path, 'pre_loki.txt'), 'r') as in_file:
-        rows = in_file.readlines()[1:]
-        with open(os.path.join(out_path, 'hash_loki.txt'), 'w') as file:
-            for row in rows:
-                if row.find('MD5', 0, 4) == -1:
-                    file.write(row)
-
-    os.remove(os.path.join(out_path, 'pre_loki.txt'))
-elif done_md5_dfs:
-    md5_df = pd.concat(done_md5_dfs)
-    md5_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    md5_df = md5_df[md5_df['Indicator'] != ''].copy()
-    md5_df.to_csv(os.path.join(out_path, 'md5_all.csv'), index = False)
-    # write loki format
-    with open(os.path.join(out_path, 'md5_all.csv'), 'r') as in_file:
-        with open(os.path.join(out_path, 'pre_loki.txt'), 'w') as file:
-            rows = csv.DictReader(in_file, fieldnames=['Indicator', 'Published', 'Updated', 'Attribution', 'Source'])
-            for row in rows:
-                comment = ', '.join(filter(None, ['Attribution: ' + row['Attribution'], 'Source: ' + row['Source']]))
-                file.write(row['Indicator'] + '; ' + comment + ' Downloaded: ' + row['Published'] + '\n')
-
-    # can't figure out why some extra lines starting with the previous line's description, had to manually filter them out
-    with open(os.path.join(out_path, 'pre_loki.txt'), 'r') as in_file:
-        rows = in_file.readlines()[1:]
-        with open(os.path.join(out_path, 'hash_loki.txt'), 'w') as file:
-            for row in rows:
-                if row.find('MD5', 0, 4) == -1:
-                    file.write(row)
-
-    os.remove(os.path.join(out_path, 'pre_loki.txt'))
-
-if sha1_dfs:
-    sha1_df = pd.concat(sha1_dfs)
-    sha1_df.drop(['Type'], axis=1, inplace=True)
-    #print(sha1_df)
-    # add in finished csvs
-    done_sha1_dfs.append(sha1_df)
-    sha1_df = pd.concat(done_sha1_dfs)
-    sha1_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    sha1_df = sha1_df[sha1_df['Indicator'] != ''].copy()
-    sha1_df.to_csv(os.path.join(out_path, 'sha1_all.csv'), index = False)
-elif done_sha1_dfs:
-    sha1_df = pd.concat(done_sha1_dfs)
-    sha1_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    sha1_df = sha1_df[sha1_df['Indicator'] != ''].copy()
-    sha1_df.to_csv(os.path.join(out_path, 'sha1_all.csv'), index = False)
-if sha256_dfs:
-    sha256_df = pd.concat(sha256_dfs)
-    sha256_df.drop(['Type'], axis=1, inplace=True)
-    #print(sha256_df)
-    # add in finished csvs
-    done_sha256_dfs.append(sha256_df)
-    sha256_df = pd.concat(done_sha256_dfs)
-    sha256_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    sha256_df = sha256_df[sha256_df['Indicator'] != ''].copy()
-    sha256_df.to_csv(os.path.join(out_path, 'sha256_all.csv'), index = False)
-elif done_sha256_dfs:
-    sha256_df = pd.concat(done_sha256_dfs)
-    sha256_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    sha256_df = sha256_df[sha256_df['Indicator'] != ''].copy()
-    sha256_df.to_csv(os.path.join(out_path, 'sha256_all.csv'), index = False)
+    with open(os.path.join(out_path, 'loki.txt'), 'w') as file:
+        md5_df.loc[md5_df['Attribution'] == '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source']
+        md5_df.loc[md5_df['Attribution'] != '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source'] + ', ' + 'Attribution: ' + md5_df['Attribution']
+        pd.options.display.max_colwidth = None
+        #display(md5_df)
+        lines = md5_df['loki'].to_string(header=False, index=False).split('\n')
+        for line in lines:
+            file.write(line.lstrip() + '\n')
 if email_dfs:
     email_df = pd.concat(email_dfs)
     email_df.drop(['Type'], axis=1, inplace=True)
-    #print(email_df)
-    # add in finished csvs
-    done_email_dfs.append(email_df)
-    email_df = pd.concat(done_email_dfs)
     email_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    email_df = email_df[email_df['Indicator'] != ''].copy()
+    email_df = email_df[email_df['Indicator'] != '']
     email_df.to_csv(os.path.join(out_path, 'email_all.csv'), index = False)
-elif done_email_dfs:
-    email_df = pd.concat(done_email_dfs)
-    email_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    email_df = email_df[email_df['Indicator'] != ''].copy()
-    email_df.to_csv(os.path.join(out_path, 'email_all.csv'), index = False)
-if len(ja3_dfs) > 0:
-    ja3_df = pd.concat(ja3_dfs)
-    ja3_df.drop(['Type'], axis=1, inplace=True)
-    #print(ja3_df)
-    # add in finished csvs
-    done_ja3_dfs.append(ja3_df)
-    ja3_df = pd.concat(done_ja3_dfs)
-    ja3_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    ja3_df = ja3_df[ja3_df['Indicator'] != ''].copy()
-    ja3_df.to_csv(os.path.join(out_path, 'ja3_all.csv'), index = False)
-elif done_ja3_dfs:
-    ja3_df = pd.concat(done_ja3_dfs)
-    ja3_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    ja3_df = ja3_df[ja3_df['Indicator'] != ''].copy()
-    ja3_df.to_csv(os.path.join(out_path, 'ja3_all.csv'), index = False)
