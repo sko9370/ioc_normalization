@@ -234,6 +234,11 @@ tor_df['Attribution'] = 'tor exit node'
 tor_df['Source'] = 'https://check.torproject.org/torbulkexitlist'
 ip_dfs.append(tor_df.copy())
 
+if arg.out_path:
+    out_path = arg.out_path
+else:
+    out_path = args.path
+
 if url_dfs:
     # merge all url dataframes from url df list together
     url_df = pd.concat(url_dfs)
