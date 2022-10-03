@@ -276,11 +276,6 @@ if ip_dfs:
     ip_df = ip_df[ip_df['Indicator'] != '']
     ip_df.to_csv(os.path.join(out_path, 'ip_all.csv'), index = False)
 if md5_dfs:
-    md5_df = pd.concat(md5_dfs)
-    md5_df.drop(['Type'], axis=1, inplace=True)
-    md5_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
-    md5_df = md5_df[md5_df['Indicator'] != '']
-    md5_df.to_csv(os.path.join(out_path, 'md5_all.csv'), index = False)
     with open(os.path.join(out_path, 'loki.txt'), 'w') as file:
         md5_df.loc[md5_df['Attribution'] == '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source']
         md5_df.loc[md5_df['Attribution'] != '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source'] + ', ' + 'Attribution: ' + md5_df['Attribution']
@@ -288,12 +283,7 @@ if md5_dfs:
         #display(md5_df)
         lines = md5_df['loki'].to_string(header=False, index=False).split('\n')
         for line in lines:
-            file.write(line.lstrip() + '\n')    with open(os.path.join(out_path, 'loki.txt'), 'w') as file:
-        for index, row in md5_df.iterrows():
-            comment = 'Updated: ' + row['Updated'] + ', ' + 'Source: ' + row['Source']
-            if row['Attribution'] != '':
-                comment += 'Attribution: ' + row['Attribution']
-            file.write(row['Indicator'] + '; ' + comment)
+            file.write(line.lstrip() + '\n')
 if email_dfs:
     email_df = pd.concat(email_dfs)
     email_df.drop(['Type'], axis=1, inplace=True)
