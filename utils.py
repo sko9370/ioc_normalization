@@ -2,20 +2,22 @@ import os
 import pandas as pd
 
 def get_file_paths(topdir):
-    extensions = ['.csv', '.xlsx']
-    if topdir.endswith(extensions[0]) or topdir.endswith(extensions[1]):
-        return [topdir]
-    file_paths = []
+    av_files = []
+    md_files = []
+    cs_files = []
+    tf_files = []
+    ct_files = []
     for dirpath, dirnames, files in os.walk(topdir):
         for name in files:
-            if name.lower().endswith(extensions[0]):
-                file_paths.append(os.path.join(dirpath, name))
-            elif name.lower().endswith(extensions[1]):
-                file_paths.append(os.path.join(dirpath, name))
-    return file_paths
-
-def read_csv(in_file):
-    return pd.read_csv(in_file, header=0, dtype='unicode')
-
-def fill_empty(temp_df):
-    temp_df.fillna('', inplace=True)
+            if name.lower().endswith('csv'):
+                if 'alienvault' in dirpath:
+                    av_files.append(os.path.join(dirpath, name))
+                elif 'mandiant' in dirpath:
+                    md_files.append(os.path.join(dirpath, name))
+                elif 'crowdstrike' in dirpath:
+                    cs_files.append(os.path.join(dirpath, name))
+                elif 'threatfox' in dirpath:
+                    tf_files.append(os.path.join(dirpath, name))
+                elif 'custom' in dirpath:
+                    ct_files.append(os.path.join(dirpath, name))
+    return av_files, md_files, cs_files, tf_files 
