@@ -234,8 +234,8 @@ tor_df['Attribution'] = 'tor exit node'
 tor_df['Source'] = 'https://check.torproject.org/torbulkexitlist'
 ip_dfs.append(tor_df.copy())
 
-if arg.out_path:
-    out_path = arg.out_path
+if args.out_path:
+    out_path = args.out_path
 else:
     out_path = args.path
 
