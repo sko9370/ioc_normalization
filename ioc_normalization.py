@@ -3,6 +3,7 @@ import os, sys
 import csv
 import pandas as pd
 import requests
+from io import StringIO
 from datetime import datetime
 from datetime import date
 from urllib.parse import urlparse
@@ -16,6 +17,12 @@ args, commands = parser.parse_known_args()
 if not args.path:
     print('Must provide input CSVs\' path using -p')
     sys.exit(1)
+
+# set output path
+if args.out_path:
+    out_path = args.out_path
+else:
+    out_path = args.path
 
 # expecting top level directory with sub-directories named according to source
 # alienvault (av), mandiant (md), crowdstrike (cs), threatfox (tf)
@@ -94,42 +101,6 @@ for filepath in av_files:
     md5_dfs.append(temp_df[temp_df['Type'] == 'FileHash-MD5'].copy())
     sha1_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA1'].copy())
     sha256_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA256'].copy())
-    email_dfs.append(temp_df[temp_df['Type'] == 'email'].copy())### AlienVault processing ###
-# must pass format [attribution]_[source]_[date].csv
-def parse_filename(full_filename):
-    attribution = ''
-    attribution, source, end = full_filename.split('_')
-    date_field, ext = os.path.splitext(end)
-    return attribution, source, date_field
-
-for filepath in av_files:
-    # get filename from filepath
-    filename = os.path.basename(filepath)
-    # get additional fields from filename since AlienVault CSVs only have 3 fields
-    attribution, source, date_field = parse_filename(filename)
-    # read in CSV at filepath as a dataframe
-    temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
-    temp_df.fillna('', inplace=True)
-    # add attribution field based on filename
-    # uses loc to return boolean based series and specifies new column name
-    # https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.loc.html
-    temp_df.loc[temp_df['Description'] == '', 'Attribution'] = attribution 
-    temp_df.loc[temp_df['Description'] != '', 'Attribution'] = attribution + ': ' + temp_df['Description']
-    # add date field based on filename
-    temp_df['Updated'] = date_field
-    # add source field based on filename
-    temp_df['Source'] = source
-    # drop Description column
-    temp_df.drop(['Description'], axis=1, inplace=True)
-    # rename columns
-    temp_df.rename(columns = {'Indicator type':'Type'}, inplace=True)
-    # reorder columns
-    temp_df = temp_df[['Indicator', 'Type', 'Updated', 'Attribution', 'Source']].copy()
-    # add IOCs to dataframe lists by type
-    dns_dfs.append(temp_df[temp_df['Type'] == 'domain'].copy())
-    ip_dfs.append(temp_df[temp_df['Type'] == 'IPv4'].copy())
-    url_dfs.append(temp_df[temp_df['Type'] == 'URL'].copy())
-    md5_dfs.append(temp_df[temp_df['Type'] == 'FileHash-MD5'].copy())
     email_dfs.append(temp_df[temp_df['Type'] == 'email'].copy())
 for filepath in cs_files:
     # get filename from filepath
@@ -154,13 +125,13 @@ for filepath in cs_files:
     # reorder columns
     temp_df = temp_df[['Indicator', 'Type', 'Updated', 'Attribution', 'Source']].copy()
     # add IOCs to dataframe lists by type
-    ## TODO: add other types like ja3 and email ##
     dns_dfs.append(temp_df[temp_df['Type'] == 'domain'].copy())
     ip_dfs.append(temp_df[temp_df['Type'] == 'ip_address'].copy())
     url_dfs.append(temp_df[temp_df['Type'] == 'url'].copy())
     md5_dfs.append(temp_df[temp_df['Type'] == 'hash_md5'].copy())
     sha1_dfs.append(temp_df[temp_df['Type'] == 'hash_sha1'].copy())
     sha256_dfs.append(temp_df[temp_df['Type'] == 'hash_sha256'].copy())
+    email_dfs.append(temp_df[temp_df['Type'] == 'email_address'].copy())
 for filepath in md_files:
     # read in CSV at filepath as a dataframe
     temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
@@ -253,21 +224,39 @@ for filepath in og_files:
         email_dfs.append(temp_df.copy())
 # add most recent tor exit node list
 # https://check.torproject.org/torbulkexitlist
-url = 'https://check.torproject.org/torbulkexitlist'
-response = requests.get(url)
-tor_exit_ips = response.content.decode("utf-8").splitlines()
-tor_df = pd.DataFrame(tor_exit_ips, columns=['Indicator'])
-tor_df['Updated'] = date.today()
-tor_df['Type'] = ''
-tor_df['Attribution'] = 'tor exit node'
-tor_df['Source'] = 'https://check.torproject.org/torbulkexitlist'
-ip_dfs.append(tor_df.copy())
+try:
+    url = 'https://check.torproject.org/torbulkexitlist'
+    response = requests.get(url)
+    tor_exit_ips = response.content.decode("utf-8").splitlines()
+    tor_df = pd.DataFrame(tor_exit_ips, columns=['Indicator'])
+    tor_df['Updated'] = date.today()
+    tor_df['Type'] = ''
+    tor_df['Attribution'] = 'tor exit node'
+    tor_df['Source'] = 'https://check.torproject.org/torbulkexitlist'
+    ip_dfs.append(tor_df.copy())
+except:
+    print('Was not able to access check.torproject.org/torbulkexitlist or process data. Check internet connection.')
+# add most recent SSL SHA1 fingerprint list
+# https://sslbl.abuse.ch/blacklist/sslblacklist.csv
+try:
+    url = 'https://sslbl.abuse.ch/blacklist/sslblacklist.csv'
+    response = requests.get(url)
+    ssl_string = response.content.decode("utf-8")
+    ssl_io = StringIO(ssl_string)
+    ssl_df = pd.read_csv(ssl_io, skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
+    ssl_df.fillna('', inplace=True)
+    ssl_df.rename(columns={'# Listingdate':'Updated', 'SHA1':'Indicator', 'Listingreason':'Attribution'}, inplace=True)
+    print(ssl_df.columns)
+    ssl_df = ssl_df[['Indicator', 'Updated', 'Attribution']]
+    ssl_df['Source'] = 'sslbl.abuse.ch'
+    ssl_df['Updated'] = ssl_df['Updated'].apply(lambda x: x[:10])
+except:
+    print('Was not able to access sslbl.abuse.ch/blacklist/sslblacklist.csv or process data. Check internet connection.')
 
-if args.out_path:
-    out_path = args.out_path
-else:
-    out_path = args.path
+######################## output dataframes to CSV #########################
 
+if ssl_df:
+    ssl_df.to_csv(os.path.join(out_path, 'ssl_all.csv'), index = False)
 if url_dfs:
     # merge all url dataframes from url df list together
     url_df = pd.concat(url_dfs)
@@ -334,6 +323,7 @@ if md5_dfs:
         #display(md5_df)
         lines = md5_df['loki'].to_string(header=False, index=False).split('\n')
         for line in lines:
+            # need to left align data
             file.write(line.lstrip() + '\n')
 if email_dfs:
     email_df = pd.concat(email_dfs)
