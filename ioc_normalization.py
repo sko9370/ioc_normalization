@@ -69,7 +69,6 @@ def parse_filename(full_filename):
     attribution, source, end = full_filename.split('_')
     date_field, ext = os.path.splitext(end)
     return attribution, source, date_field
-
 for filepath in av_files:
     # get filename from filepath
     filename = os.path.basename(filepath)
@@ -102,6 +101,7 @@ for filepath in av_files:
     sha1_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA1'].copy())
     sha256_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA256'].copy())
     email_dfs.append(temp_df[temp_df['Type'] == 'email'].copy())
+### CrowdStrike processing ###
 for filepath in cs_files:
     # get filename from filepath
     filename = os.path.basename(filepath)
@@ -132,6 +132,7 @@ for filepath in cs_files:
     sha1_dfs.append(temp_df[temp_df['Type'] == 'hash_sha1'].copy())
     sha256_dfs.append(temp_df[temp_df['Type'] == 'hash_sha256'].copy())
     email_dfs.append(temp_df[temp_df['Type'] == 'email_address'].copy())
+### Mandiant processing ###
 for filepath in md_files:
     # read in CSV at filepath as a dataframe
     temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
@@ -154,6 +155,7 @@ for filepath in md_files:
     md5_dfs.append(temp_df[temp_df['Type'] == 'MD5'].copy())
     sha1_dfs.append(temp_df[temp_df['Type'] == 'SHA1'].copy())
     sha256_dfs.append(temp_df[temp_df['Type'] == 'SHA256'].copy())
+### ThreatFox processing ###
 for filepath in tf_files:
     # read in CSV at filepath as a dataframe
     temp_df = pd.read_csv(filepath, skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
@@ -178,6 +180,7 @@ for filepath in tf_files:
     md5_dfs.append(temp_df[temp_df['Type'] == 'md5_hash'].copy())
     sha1_dfs.append(temp_df[temp_df['Type'] == 'sha1_hash'].copy())
     sha256_dfs.append(temp_df[temp_df['Type'] == 'sha256_hash'].copy())
+### Custom Processing ###
 for filepath in ct_files:
     # get filename from filepath
     filename = os.path.basename(filepath)
@@ -193,6 +196,7 @@ for filepath in ct_files:
     sha1_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA1'].copy())
     sha256_dfs.append(temp_df[temp_df['Type'] == 'FileHash-SHA256'].copy())
     email_dfs.append(temp_df[temp_df['Type'] == 'email'].copy())
+### Old processed files ###
 for filepath in og_files:
     if 'ip' in filepath:
         temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
