@@ -52,7 +52,7 @@ def get_file_paths(topdir):
     return av_files, md_files, cs_files, tf_files, ct_files, og_files
 
 print('Categorizing files')
-av_files, md_files, cs_files, tf_files, ct_files, og_files = get_file_paths('IOC/SOCIUS')
+av_files, md_files, cs_files, tf_files, ct_files, og_files = get_file_paths(args.path)
 
 # list of dataframes to be merged at the end
 dns_dfs = []
