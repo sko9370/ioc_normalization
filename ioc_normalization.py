@@ -3,7 +3,8 @@ import os, sys
 import csv
 import pandas as pd
 import requests
-from io import StringIO
+from io import StringIO, BytesIO
+from zipfile import ZipFile
 from datetime import datetime
 from datetime import date
 from urllib.parse import urlparse
@@ -50,6 +51,7 @@ def get_file_paths(topdir):
                     og_files.append(os.path.join(dirpath,name))
     return av_files, md_files, cs_files, tf_files, ct_files, og_files
 
+print('Categorizing files')
 av_files, md_files, cs_files, tf_files, ct_files, og_files = get_file_paths('IOC/SOCIUS')
 
 # list of dataframes to be merged at the end
@@ -61,6 +63,8 @@ sha1_dfs = []
 sha256_dfs = []
 email_dfs = []
 ja3_dfs = []
+
+print('Begin processing files')
 
 ### AlienVault processing ###
 # must pass format [attribution]_[source]_[date].csv
@@ -155,31 +159,6 @@ for filepath in md_files:
     md5_dfs.append(temp_df[temp_df['Type'] == 'MD5'].copy())
     sha1_dfs.append(temp_df[temp_df['Type'] == 'SHA1'].copy())
     sha256_dfs.append(temp_df[temp_df['Type'] == 'SHA256'].copy())
-### ThreatFox processing ###
-for filepath in tf_files:
-    # read in CSV at filepath as a dataframe
-    temp_df = pd.read_csv(filepath, skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
-    temp_df.fillna('', inplace=True)
-    # add source
-    temp_df['Source'] = temp_df['reporter'].copy()
-    # add attribution
-    temp_df['Attribution'] = temp_df['tags']
-    # rename columns
-    temp_df.rename(columns = {'ioc_value':'Indicator', 'ioc_type':'Type', '# "first_seen_utc"':'Updated'}, inplace=True)
-    # drop columns
-    unnecessary_columns = ['ioc_id', 'threat_type', 'fk_malware', 'malware_alias', 'malware_printable', 'confidence_level', 'anonymous', 'reporter', 'reference', 'tags', 'last_seen_utc']
-    temp_df.drop(unnecessary_columns, axis=1, inplace=True)
-    # reorder columns
-    temp_df = temp_df.loc[:, ('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
-    # reformat dates
-    temp_df['Updated'] = temp_df['Updated'].apply(lambda x: x[:10])
-    # add IOCs to dataframe lists by type
-    dns_dfs.append(temp_df[temp_df['Type'] == 'domain'].copy())
-    ip_dfs.append(temp_df[temp_df['Type'] == 'ip:port'].copy())
-    url_dfs.append(temp_df[temp_df['Type'] == 'url'].copy())
-    md5_dfs.append(temp_df[temp_df['Type'] == 'md5_hash'].copy())
-    sha1_dfs.append(temp_df[temp_df['Type'] == 'sha1_hash'].copy())
-    sha256_dfs.append(temp_df[temp_df['Type'] == 'sha256_hash'].copy())
 ### Custom Processing ###
 for filepath in ct_files:
     # get filename from filepath
@@ -226,6 +205,38 @@ for filepath in og_files:
         temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
         temp_df.insert(1,'Type','')
         email_dfs.append(temp_df.copy())
+### ThreatFox processing ###
+try:
+    url = 'https://threatfox.abuse.ch/export/csv/full/'
+    response = requests.get(url)
+    # instantiate zip file in memory and extract just full.csv as z
+    with ZipFile(BytesIO(response.content)).open('full.csv') as z:
+        threatfox_string = z.read().decode('utf-8')
+    tf_io = StringIO(threatfox_string)
+    tf_df = pd.read_csv(tf_io, skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
+    tf_df.fillna('', inplace=True)
+    # add source
+    tf_df['Source'] = tf_df['reporter'].copy()
+    # add attribution
+    tf_df['Attribution'] = tf_df['tags']
+    # rename columns
+    tf_df.rename(columns = {'ioc_value':'Indicator', 'ioc_type':'Type', '# "first_seen_utc"':'Updated'}, inplace=True)
+    # drop columns
+    unnecessary_columns = ['ioc_id', 'threat_type', 'fk_malware', 'malware_alias', 'malware_printable', 'confidence_level', 'anonymous', 'reporter', 'reference', 'tags', 'last_seen_utc']
+    tf_df.drop(unnecessary_columns, axis=1, inplace=True)
+    # reorder columns
+    tf_df = tf_df.loc[:, ('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
+    # reformat dates
+    tf_df['Updated'] = tf_df['Updated'].apply(lambda x: x[:10])
+    # add IOCs to dataframe lists by type
+    dns_dfs.append(tf_df[tf_df['Type'] == 'domain'].copy())
+    ip_dfs.append(tf_df[tf_df['Type'] == 'ip:port'].copy())
+    url_dfs.append(tf_df[tf_df['Type'] == 'url'].copy())
+    md5_dfs.append(tf_df[tf_df['Type'] == 'md5_hash'].copy())
+    sha1_dfs.append(tf_df[tf_df['Type'] == 'sha1_hash'].copy())
+    sha256_dfs.append(tf_df[tf_df['Type'] == 'sha256_hash'].copy())
+except:
+    print('ThreatFox download failed or rate limit reached, try again in a few minutes')
 # add most recent tor exit node list
 # https://check.torproject.org/torbulkexitlist
 try:
@@ -250,16 +261,18 @@ try:
     ssl_df = pd.read_csv(ssl_io, skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
     ssl_df.fillna('', inplace=True)
     ssl_df.rename(columns={'# Listingdate':'Updated', 'SHA1':'Indicator', 'Listingreason':'Attribution'}, inplace=True)
-    print(ssl_df.columns)
+    #print(ssl_df.columns)
     ssl_df = ssl_df[['Indicator', 'Updated', 'Attribution']]
     ssl_df['Source'] = 'sslbl.abuse.ch'
     ssl_df['Updated'] = ssl_df['Updated'].apply(lambda x: x[:10])
 except:
     print('Was not able to access sslbl.abuse.ch/blacklist/sslblacklist.csv or process data. Check internet connection.')
 
+print('Begin exporting to CSV')
+
 ######################## output dataframes to CSV #########################
 
-if ssl_df:
+if len(ssl_df.index):
     ssl_df.to_csv(os.path.join(out_path, 'ssl_all.csv'), index = False)
 if url_dfs:
     # merge all url dataframes from url df list together
@@ -270,19 +283,23 @@ if url_dfs:
     parsed_ip_df = parsed_dns_df.copy()
     parsed_ip_df['Indicator'] = parsed_ip_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
     parsed_ip_df.dropna(inplace=True)
+    # add note in source column that parsed out from URLs and high chance of false positive
+    parsed_ip_df['Source'] = parsed_ip_df['Source'] + '; LOW CONFIDENCE, PARSED FROM URL IOCS'
     ip_dfs.append(parsed_ip_df)
     # delete all IPs and only send domains
     parsed_dns_df['IP'] = parsed_dns_df['Indicator'].str.match(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
     parsed_dns_df = parsed_dns_df[parsed_dns_df.IP != True]
     parsed_dns_df.drop(['IP'], axis=1, inplace=True)
     parsed_dns_df.dropna(inplace=True)
+    # add note in source column that parsed out from URLs and high chance of false positive
+    parsed_dns_df['Source'] = parsed_dns_df['Source'] + '; LOW CONFIDENCE, PARSED FROM URL IOCS'
     dns_dfs.append(parsed_dns_df)
-    ####### CANARY #######
-    #print('CANARYYYYY')
     # parse out path and add as new field
     url_df['Path'] = url_df['Indicator'].apply(lambda x: urlparse(x).path)
     url_df = url_df.loc[:,('Indicator', 'Path', 'Type', 'Updated', 'Attribution', 'Source')]
     url_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    # delete empty paths (just '/')
+    url_df.loc[url_df['Path'] == '/'] = ''
     # sanity check for empty rows
     url_df = url_df[url_df['Indicator'] != '']
     url_df.to_csv(os.path.join(out_path, 'url_all.csv'), index = False)
@@ -297,6 +314,8 @@ if dns_dfs:
     csvtext = response.content.decode('utf-8')
     cols = csvtext.split('\n')[0].split(',')
     wl_df = pd.DataFrame([row.split(',') for row in csvtext.split('\n')[1:]], columns=cols)
+    # only keep com TLDs
+    wl_df = wl_df[wl_df['TLD'] == 'com'].copy()
     #print(wl_df)
     # only keep top 100 domains
     wl_df.drop(wl_df.index[100:], inplace=True)
