@@ -51,7 +51,7 @@ def get_file_paths(topdir):
                     og_files.append(os.path.join(dirpath,name))
     return av_files, md_files, cs_files, tf_files, ct_files, og_files
 
-print('Categorizing files')
+print('1/3: Categorizing files')
 av_files, md_files, cs_files, tf_files, ct_files, og_files = get_file_paths(args.path)
 
 # list of dataframes to be merged at the end
@@ -64,7 +64,7 @@ sha256_dfs = []
 email_dfs = []
 ja3_dfs = []
 
-print('Begin processing files')
+print('2/3: Begin processing files')
 
 ### AlienVault processing ###
 # must pass format [attribution]_[source]_[date].csv
@@ -268,7 +268,7 @@ try:
 except:
     print('Was not able to access sslbl.abuse.ch/blacklist/sslblacklist.csv or process data. Check internet connection.')
 
-print('Begin exporting to CSV')
+print('3/3: Begin exporting to CSV')
 
 ######################## output dataframes to CSV #########################
 
