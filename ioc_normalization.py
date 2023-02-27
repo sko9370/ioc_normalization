@@ -339,7 +339,7 @@ if md5_dfs:
     md5_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
     md5_df = md5_df[md5_df['Indicator'] != '']
     md5_df.to_csv(os.path.join(out_path, 'md5_all.csv'), index = False)
-    with open(os.path.join(out_path, 'loki.txt'), 'w') as file:
+    with open(os.path.join(out_path, 'hash-custom-loki.txt'), 'w') as file:
         md5_df.loc[md5_df['Attribution'] == '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source']
         md5_df.loc[md5_df['Attribution'] != '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source'] + ', ' + 'Attribution: ' + md5_df['Attribution']
         pd.options.display.max_colwidth = None
