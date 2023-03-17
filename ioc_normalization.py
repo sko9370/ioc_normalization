@@ -151,7 +151,10 @@ for filepath in md_files:
     # reorder columns
     temp_df = temp_df.loc[:,('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
     # reformat dates
-    temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%B %d, %Y').strftime('%Y-%m-%d'))
+    try:
+        temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%B %d, %Y').strftime('%Y-%m-%d'))
+    except ValueError:
+        temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%d-%b-%Y').strftime('%Y-%m-%d'))
     # add IOCs to dataframe lists by type
     dns_dfs.append(temp_df[temp_df['Type'] == 'FQDN'].copy())
     ip_dfs.append(temp_df[temp_df['Type'] == 'IPV4'].copy())
