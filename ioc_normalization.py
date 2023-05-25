@@ -3,6 +3,8 @@ import os, sys
 import csv
 import pandas as pd
 import requests
+import ipaddress
+import re
 from io import StringIO, BytesIO
 from zipfile import ZipFile
 from datetime import datetime
@@ -107,8 +109,6 @@ for filepath in av_files:
     email_dfs.append(temp_df[temp_df['Type'] == 'email'].copy())
 ### CrowdStrike processing ###
 for filepath in cs_files:
-    # get filename from filepath
-    filename = os.path.basename(filepath)
     # read in CSV at filepath as a dataframe
     temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
     temp_df.fillna('', inplace=True)
@@ -152,9 +152,9 @@ for filepath in md_files:
     temp_df = temp_df.loc[:,('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
     # reformat dates
     try:
-        temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%B %d, %Y').strftime('%Y-%m-%d'))
-    except ValueError:
         temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%d-%b-%Y').strftime('%Y-%m-%d'))
+    except ValueError:
+        temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%d-%b-%y').strftime('%Y-%m-%d'))
     # add IOCs to dataframe lists by type
     dns_dfs.append(temp_df[temp_df['Type'] == 'FQDN'].copy())
     ip_dfs.append(temp_df[temp_df['Type'] == 'IPV4'].copy())
@@ -231,6 +231,10 @@ try:
     tf_df = tf_df.loc[:, ('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
     # reformat dates
     tf_df['Updated'] = tf_df['Updated'].apply(lambda x: x[:10])
+    # leading zero in IP fix
+    #print('before IP fix')
+    #tf_df[tf_df['Type'] == 'ip:port'] = tf_df[tf_df['Type'] == 'ip:port'].apply(lambda ip: re.sub('\.[0]*', '.', ip))
+    #print('after IP fix')
     # add IOCs to dataframe lists by type
     dns_dfs.append(tf_df[tf_df['Type'] == 'domain'].copy())
     ip_dfs.append(tf_df[tf_df['Type'] == 'ip:port'].copy())
@@ -334,7 +338,22 @@ if ip_dfs:
     ip_df.drop(['Type'], axis=1, inplace=True)
     ip_df['Indicator'] = ip_df['Indicator'].str.extract(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
     ip_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
+    # do this vectorized with str.split()
+    def valid_ip(ip):
+        octets = ip.split('.')
+        clean_octets = []
+        for octet in octets:
+            if int(octet) > 254:
+                return ''
+            else:
+                clean_octets.append(str(int(octet)))
+        return '.'.join(clean_octets)
+    ip_df['Indicator'] = ip_df['Indicator'].apply(valid_ip)
     ip_df = ip_df[ip_df['Indicator'] != '']
+    # fix leading zeros
+    #ip_df['Indicator'] = ip_df['Indicator'].str.replace('(\.)0+(?=[^.])', r'\1', regex=True)
+    # filter out private IPs
+    ip_df = ip_df[ip_df['Indicator'].apply(lambda ip: ipaddress.ip_address(ip).is_global)]
     ip_df.to_csv(os.path.join(out_path, 'ip_all.csv'), index = False)
 if md5_dfs:
     md5_df = pd.concat(md5_dfs)
