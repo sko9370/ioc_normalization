@@ -39,18 +39,25 @@ def get_file_paths(topdir):
     for dirpath, dirnames, files in os.walk(topdir):
         for name in files:
             if name.lower().endswith('csv'):
+                filepath = os.path.join(dirpath, name)
                 if 'alienvault' in dirpath:
-                    av_files.append(os.path.join(dirpath, name))
+                    print(filepath)
+                    av_files.append(filepath)
                 elif 'mandiant' in dirpath:
-                    md_files.append(os.path.join(dirpath, name))
+                    print(filepath)
+                    md_files.append(filepath)
                 elif 'crowdstrike' in dirpath:
-                    cs_files.append(os.path.join(dirpath, name))
+                    print(filepath)
+                    cs_files.append(filepath)
                 elif 'threatfox' in dirpath:
-                    tf_files.append(os.path.join(dirpath, name))
+                    print(filepath)
+                    tf_files.append(filepath)
                 elif 'custom' in dirpath:
-                    ct_files.append(os.path.join(dirpath, name))
+                    print(filepath)
+                    ct_files.append(filepath)
                 elif 'old' in dirpath:
-                    og_files.append(os.path.join(dirpath,name))
+                    print(filepath)
+                    og_files.append(filepath)
     return av_files, md_files, cs_files, tf_files, ct_files, og_files
 
 print('1/3: Categorizing files')
@@ -139,22 +146,26 @@ for filepath in cs_files:
 ### Mandiant processing ###
 for filepath in md_files:
     # read in CSV at filepath as a dataframe
-    temp_df = pd.read_csv(filepath, header=0, dtype='unicode')
-    temp_df.fillna('', inplace=True)
+    temp_df = pd.read_csv(filepath, header=0, quotechar="'", dtype='unicode')
+    #temp_df = pd.read_csv(filepath, header=0, quotechar='"', quoting=0, dtype='unicode')
+    #temp_df.fillna('', inplace=True)
     # drop unnecessary columns
     unnecessary_columns = ['Exclusive', 'First Seen']
     temp_df.drop(unnecessary_columns, axis=1, inplace=True)
+    # create combined attribution column
+    temp_df['Attribution'] = temp_df[['Associated Actors', 'Associated Malware']].apply(lambda x: '; '.join(x[x.notnull()]), axis=1)
     # rename columns
-    temp_df.rename(columns = {'Indicator Value':'Indicator', 'Indicator Type':'Type', 'Last Seen':'Updated', 'Associations':'Attribution'}, inplace=True)
+    #temp_df.rename(columns = {'Indicator Value':'Indicator', 'Indicator Type':'Type', 'Last Seen':'Updated', 'Associated Actors':'Attribution'}, inplace=True)
+    temp_df.rename(columns = {'Indicator Value':'Indicator', 'Indicator Type':'Type', 'Last Seen':'Updated'}, inplace=True)
     # add source
     temp_df['Source'] = 'Mandiant FireEye' 
     # reorder columns
     temp_df = temp_df.loc[:,('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
     # reformat dates
-    try:
-        temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%d-%b-%Y').strftime('%Y-%m-%d'))
-    except ValueError:
-        temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%d-%b-%y').strftime('%Y-%m-%d'))
+    #try:
+        #temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%d-%b-%Y').strftime('%Y-%m-%d'))
+    #except ValueError:
+        #temp_df['Updated'] = temp_df['Updated'].apply(lambda x: datetime.strptime(x, '%d-%b-%y').strftime('%Y-%m-%d'))
     # add IOCs to dataframe lists by type
     dns_dfs.append(temp_df[temp_df['Type'] == 'FQDN'].copy())
     ip_dfs.append(temp_df[temp_df['Type'] == 'IPV4'].copy())
@@ -209,6 +220,7 @@ for filepath in og_files:
         temp_df.insert(1,'Type','')
         email_dfs.append(temp_df.copy())
 ### ThreatFox processing ###
+#'''
 try:
     url = 'https://threatfox.abuse.ch/export/csv/full/'
     response = requests.get(url)
@@ -216,7 +228,8 @@ try:
     with ZipFile(BytesIO(response.content)).open('full.csv') as z:
         threatfox_string = z.read().decode('utf-8')
     tf_io = StringIO(threatfox_string)
-    tf_df = pd.read_csv(tf_io, skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
+    #tf_df = pd.read_csv(tf_io, skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
+    tf_df = pd.read_csv(tf_io, skiprows=8, skipfooter=1, sep=',', skipinitialspace=True, quotechar='"', quoting=1, doublequote=False, engine='python')
     tf_df.fillna('', inplace=True)
     # add source
     tf_df['Source'] = tf_df['reporter'].copy()
@@ -243,7 +256,38 @@ try:
     sha1_dfs.append(tf_df[tf_df['Type'] == 'sha1_hash'].copy())
     sha256_dfs.append(tf_df[tf_df['Type'] == 'sha256_hash'].copy())
 except:
-    print('ThreatFox download failed or rate limit reached, try again in a few minutes')
+    print('ThreatFox download failed or rate limit reached, trying local version')
+    if len(tf_files) == 0:
+        print('Local version not available')
+    else:
+        #tf_df = pd.read_csv(tf_files[0], skiprows=8, skipfooter=1, sep=',', quotechar='"', skipinitialspace=True, quoting=csv.QUOTE_ALL, engine='python')
+        tf_df = pd.read_csv(tf_files[0], skiprows=8, skipfooter=1, sep=',', skipinitialspace=True, quotechar='"', quoting=1, doublequote=False, engine='python')
+        tf_df.fillna('', inplace=True)
+        # add source
+        tf_df['Source'] = tf_df['reporter'].copy()
+        # add attribution
+        tf_df['Attribution'] = tf_df['tags']
+        # rename columns
+        tf_df.rename(columns = {'ioc_value':'Indicator', 'ioc_type':'Type', '# "first_seen_utc"':'Updated'}, inplace=True)
+        # drop columns
+        unnecessary_columns = ['ioc_id', 'threat_type', 'fk_malware', 'malware_alias', 'malware_printable', 'confidence_level', 'anonymous', 'reporter', 'reference', 'tags', 'last_seen_utc']
+        tf_df.drop(unnecessary_columns, axis=1, inplace=True)
+        # reorder columns
+        tf_df = tf_df.loc[:, ('Indicator', 'Type', 'Updated', 'Attribution', 'Source')]
+        # reformat dates
+        tf_df['Updated'] = tf_df['Updated'].apply(lambda x: x[:10])
+        # leading zero in IP fix
+        #print('before IP fix')
+        #tf_df[tf_df['Type'] == 'ip:port'] = tf_df[tf_df['Type'] == 'ip:port'].apply(lambda ip: re.sub('\.[0]*', '.', ip))
+        #print('after IP fix')
+        # add IOCs to dataframe lists by type
+        dns_dfs.append(tf_df[tf_df['Type'] == 'domain'].copy())
+        ip_dfs.append(tf_df[tf_df['Type'] == 'ip:port'].copy())
+        url_dfs.append(tf_df[tf_df['Type'] == 'url'].copy())
+        md5_dfs.append(tf_df[tf_df['Type'] == 'md5_hash'].copy())
+        sha1_dfs.append(tf_df[tf_df['Type'] == 'sha1_hash'].copy())
+        sha256_dfs.append(tf_df[tf_df['Type'] == 'sha256_hash'].copy())
+#'''
 # add most recent tor exit node list
 # https://check.torproject.org/torbulkexitlist
 try:
@@ -361,12 +405,14 @@ if md5_dfs:
     md5_df.drop_duplicates(subset=['Indicator'], keep='last', inplace=True)
     md5_df = md5_df[md5_df['Indicator'] != '']
     md5_df.to_csv(os.path.join(out_path, 'md5_all.csv'), index = False)
+    loki_df = pd.DataFrame()
     with open(os.path.join(out_path, 'hash-custom-loki.txt'), 'w') as file:
-        md5_df.loc[md5_df['Attribution'] == '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source']
-        md5_df.loc[md5_df['Attribution'] != '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source'] + ', ' + 'Attribution: ' + md5_df['Attribution']
+        #md5_df.loc[md5_df['Attribution'] == '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source']
+        #md5_df.loc[md5_df['Attribution'] != '', 'loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source'] + ', ' + 'Attribution: ' + md5_df['Attribution']
+        loki_df['loki'] = md5_df['Indicator'] + '; ' + 'Updated: ' + md5_df['Updated'] + ', ' + 'Source: ' + md5_df['Source'] + ', ' + 'Attribution: ' + md5_df['Attribution']
         pd.options.display.max_colwidth = None
         #display(md5_df)
-        lines = md5_df['loki'].to_string(header=False, index=False).split('\n')
+        lines = loki_df['loki'].to_string(header=False, index=False).split('\n')
         for line in lines:
             # need to left align data
             file.write(line.lstrip() + '\n')
